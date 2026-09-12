@@ -1,0 +1,16 @@
+{
+  // El entorno vive FUERA de OneDrive: OneDrive convierte los archivos del
+  // venv en placeholders (reparse points) y uv falla al reemplazar paquetes.
+  // Ver README.md -> "Entorno".
+  "python.defaultInterpreterPath": "${userHome}\\.venvs\\wall-street-pulse\\Scripts\\python.exe",
+  "python.terminal.activateEnvironment": true,
+
+  // Ejecuta los notebooks desde la raíz del proyecto, no desde notebooks/,
+  // para que las rutas relativas tipo "data/raw/..." funcionen.
+  "jupyter.notebookFileRoot": "${workspaceFolder}",
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.ipynb_checkpoints": true
+  }
+}

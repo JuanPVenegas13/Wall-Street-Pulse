@@ -1,0 +1,28 @@
+[project]
+name = "art3-wall-street"
+version = "0.1.0"
+description = "Análisis de noticias financieras bajo incertidumbre (MRI, artículo 3)"
+readme = "README.md"
+authors = [
+    { name = "JuanPabloEspTEC", email = "a01646333@tec.mx" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pandas>=3.0.5",
+    "seaborn>=0.13.2",
+]
+
+[project.scripts]
+art3-wall-street = "art3_wall_street:main"
+
+[build-system]
+requires = ["uv_build>=0.12.8,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+    "nbstripout>=0.9.1",
+]

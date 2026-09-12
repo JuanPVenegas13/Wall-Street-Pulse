@@ -1,0 +1,30 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+
+# --- Entorno ---
+.venv/
+venv/
+.env
+.env.*
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# --- Datos ---
+data/interim/*
+data/processed/*
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+
+# --- VS Code / Windows ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+Thumbs.db
+desktop.ini
