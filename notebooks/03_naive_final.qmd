@@ -1,0 +1,29 @@
+---
+title: "Naive Bayes — Wall Street Pulse - Red Final"
+subtitle: "Análisis de métodos de razonamiento e incertidumbre, Gpo 101 - AD 2026"
+format:
+    html:
+        toc: true
+        html-math-method: katex
+        embed-resources: true
+        df-print: kable
+editor: source
+---
+
+## Carga de la matriz sparse y las etiquetas
+
+Continúo desde el preprocesamiento anterior. Ahí ya se construyó la matriz sparse de frecuencias de palabras (`sparse_matrix.rds`) y el vector de etiquetas de impacto en el mismo orden (`labels.rds`), así que solo los cargo.
+
+```{r}
+library(tidyverse)
+library(naivebayes)
+library(Matrix)
+
+sparse_matrix = readRDS("../data/interim/sparse_matrix.rds")
+labels        = readRDS("../data/interim/labels.rds")
+
+cat("Dimensión de la matriz:", dim(sparse_matrix), "\n")
+cat("Longitud de etiquetas:", length(labels), "\n")
+```
+
+
