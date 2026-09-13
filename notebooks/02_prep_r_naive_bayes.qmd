@@ -1,0 +1,164 @@
+---
+title: "Naive Bayes — Wall Street Pulse"
+subtitle: "Análisis de métodos de razonamiento e incertidumbre, Gpo 101 - AD 2026"
+author: "Arie Gonzalez"
+format:
+    html:
+        toc: true
+        html-math-method: katex
+        embed-resources: true
+        df-print: kable
+editor: source
+---
+
+## Datos
+
+Cargo el CSV que salió del EDA. Ya viene sin nulos en `Headline` e `Impact_Level`, los sentimientos faltantes están como `Unknown`, y las columnas que no íbamos a usar (`News_Url`, `Date`, `Source`, `Related_Company`) ya se quitaron desde Python.
+
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(Matrix)
+d = read_csv("~/Desktop/MétodosRazonamiento/Wall-Street-Pulse/data/interim/financial_news_processed.csv")
+glimpse(d)
+```
+
+## Distribución del nivel de impacto
+
+Antes de trabajar con el texto, reviso cómo se distribuye la variable objetivo. `Impact_Level`` tiene tres categorías: `Low`, `Medium` y `High`.
+```{r}
+d |>
+    group_by(Impact_Level) |>
+    summarise(n = n()) |>
+    mutate(prop = round(n / sum(n), 3))
+```
+
+```{r}
+d |>
+    ggplot(aes(x = factor(Impact_Level, levels = c("Low", "Medium", "High")))) +
+    geom_bar(fill = "steelblue", alpha = 0.7) +
+    labs(x = "Nivel de impacto", y = "Frecuencia",
+         title = "Distribución de la variable objetivo") +
+    theme_bw() +
+    theme(plot.title = element_text(hjust = 0.5, face = "bold"),
+          axis.title = element_text(face = "bold"))
+```
+
+Las tres categorías tienen una cantidad bastante similar de registros, por lo que no se observa un desbalance importante en la variable original. Aun así, para este análisis prefiero trabajar con dos categorías y enfocarme en distinguir las noticias de impacto alto del resto.
+
+## Recodificación de la variable objetivo
+
+Agrupo `Medium` y `Low` en una sola categoría y mantengo `High` como una categoría independiente. De esta forma, la variable queda dividida entre noticias de impacto alto y noticias de impacto medio o bajo. Utilizo `case_when()` para hacer esta recodificación.
+
+```{r}
+d = d |>
+    mutate(impact_bin = case_when(
+        Impact_Level == "High" ~ "Impacto Alto",
+        Impact_Level %in% c("Medium", "Low") ~ "Impacto Otro/Bajo"
+    ))
+
+d |>
+    group_by(impact_bin) |>
+    summarise(n = n()) |>
+    mutate(prop = round(n / sum(n), 3))
+```
+
+El resultado es de 918 noticias de impacto alto y 1,958 de impacto medio o bajo. Aunque las clases no quedan exactamente 50/50, la distribución sigue siendo manejable para el modelo.
+
+## Tokenización de los titulares
+
+Ya con la etiqueta lista, ahora trabajo con el texto. `unnest_tokens()` de `tidytext` separa cada titular en palabras, dejando una palabra por renglón. Antes asigno un `headline_id` para poder relacionar cada palabra con su titular original.
+
+```{r}
+d = d |>
+    mutate(headline_id = row_number())
+
+tokens = d |>
+    select(headline_id, impact_bin, Headline) |>
+    unnest_tokens(word, Headline)
+
+head(tokens)
+```
+
+Cada renglón representa una palabra del titular, junto con su `headline_id` y su etiqueta de impacto. Las palabras quedan en minúsculas como parte de la tokenización.
+
+## Eliminación de stop words
+
+Después de separar los titulares, elimino las palabras comunes en inglés utilizando el dataset `stop_words` que incluye `tidytext`. Estas palabras aparecen con mucha frecuencia, pero aportan poca información para diferenciar las categorías.
+
+```{r}
+data("stop_words")
+
+tokens_clean = tokens |>
+    anti_join(stop_words, by = "word")
+```
+
+Reviso las 20 palabras más frecuentes para ver qué términos permanecieron después de la limpieza:
+
+```{r}
+tokens_clean |>
+    group_by(word) |>
+    summarise(n = n()) |>
+    arrange(desc(n)) |>
+    head(20)
+```
+
+Al revisar las palabras más frecuentes, predominan términos relacionados con noticias financieras, como `market`, `sector`, `stocks`, `trade` e `investors`. Esto indica que después de eliminar las palabras comunes se conservaron principalmente términos relacionados con el contenido de los titulares.
+
+## Construcción de la matriz sparse
+
+El Naive Bayes multinomial necesita una matriz donde cada renglón represente un titular y cada columna una palabra. El valor de cada celda indica cuántas veces aparece esa palabra en el titular correspondiente.
+
+Primero cuento las apariciones de cada palabra dentro de cada titular:
+
+```{r}
+word_counts = tokens_clean |>
+    group_by(headline_id, word) |>
+    summarise(n = n(), .groups = "drop")
+
+head(word_counts)
+```
+
+Después utilizo `cast_sparse()` para convertir estos datos a una matriz sparse:
+
+```{r}
+sparse_matrix = word_counts |>
+    cast_sparse(headline_id, word, n)
+
+cat("Dimensión (titulares x vocabulario):", dim(sparse_matrix), "\n")
+cat("Entradas no cero:", length(sparse_matrix@x), "\n")
+cat("Densidad:", round(length(sparse_matrix@x) / prod(dim(sparse_matrix)), 4), "\n")
+```
+
+La matriz obtenida tiene 2,876 filas y 238 columnas. Solo 18,248 posiciones contienen valores diferentes de cero, lo que representa una densidad de aproximadamente 2.67%. Esto confirma que la mayoría de las posiciones son ceros, por lo que utilizar una matriz sparse es conveniente.
+
+## Etiquetas de cada titular
+
+Para entrenar el modelo necesito, además de la matriz, el vector de etiquetas en el mismo orden que las filas. Para esto recupero la categoría de impacto correspondiente a `cada headline_id` que aparece en la matriz y las ordeno de acuerdo con el identificador.
+
+```{r}
+labels = d |>
+    filter(headline_id %in% as.integer(rownames(sparse_matrix))) |>
+    arrange(headline_id) |>
+    pull(impact_bin)
+
+cat("Longitud del vector de etiquetas:", length(labels), "\n")
+cat("Renglones de la matriz:", nrow(sparse_matrix), "\n")
+
+table(labels)
+```
+
+Los tamaños coinciden: hay 2,876 etiquetas y 2,876 renglones en la matriz. Por lo tanto, cada fila de la matriz tiene su etiqueta correspondiente.
+
+## Guardado de resultados
+
+Finalmente, guardo la matriz y las etiquetas como archivos `.rds` para que la siguiente parte del proyecto pueda cargarlos directamente sin tener que repetir todo el preprocesamiento.
+```{r}
+dir.create("../data/interim", showWarnings = FALSE, recursive = TRUE)
+
+saveRDS(sparse_matrix, "../data/interim/sparse_matrix.rds")
+saveRDS(labels,        "../data/interim/labels.rds")
+```
+
+Con esto queda terminado el preprocesamiento del texto y de la variable objetivo. La matriz sparse y las etiquetas ya están listas para utilizarse en la siguiente etapa del modelo Naive Bayes.

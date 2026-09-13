@@ -21,6 +21,8 @@ data/interim/*
 data/processed/*
 !data/interim/.gitkeep
 !data/processed/.gitkeep
+!data/interim/sparse_matrix.rds
+!data/interim/labels.rds
 
 # --- VS Code / Windows ---
 .vscode/*
@@ -28,3 +30,13 @@ data/processed/*
 !.vscode/extensions.json
 Thumbs.db
 desktop.ini
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+
+# Quarto
+/.quarto/
+*_files/
