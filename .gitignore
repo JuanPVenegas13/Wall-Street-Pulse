@@ -16,13 +16,6 @@ venv/
 .ipynb_checkpoints/
 *.nbconvert.ipynb
 
-# --- Datos ---
-data/interim/*
-data/processed/*
-!data/interim/.gitkeep
-!data/processed/.gitkeep
-!data/interim/sparse_matrix.rds
-!data/interim/labels.rds
 
 # --- VS Code / Windows ---
 .vscode/*
