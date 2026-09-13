@@ -12,7 +12,7 @@ editor: source
 
 ## Carga de la matriz sparse y las etiquetas
 
-Continúo desde el preprocesamiento anterior. Ahí ya se construyó la matriz sparse de frecuencias de palabras (`sparse_matrix.rds`) y el vector de etiquetas de impacto en el mismo orden (`labels.rds`), así que solo los cargo.
+Se continua desde el preprocesamiento anterior. Ahí ya se construyó la matriz sparse de frecuencias de palabras (`sparse_matrix.rds`) y el vector de etiquetas de impacto en el mismo orden (`labels.rds`), así que solo se cargan.
 
 ```{r}
 library(tidyverse)
@@ -26,4 +26,90 @@ cat("Dimensión de la matriz:", dim(sparse_matrix), "\n")
 cat("Longitud de etiquetas:", length(labels), "\n")
 ```
 
+## División en training y test
 
+Se divide en 80% entrenamiento y 20% prueba. Se fija una semilla con `set.seed()` para que la separación sea reproducible.
+
+```{r}
+set.seed(42)
+
+n = nrow(sparse_matrix)
+train_idx = sample(seq_len(n), size = round(0.8 * n))
+
+train_x = sparse_matrix[train_idx, ]
+test_x  = sparse_matrix[-train_idx, ]
+
+train_y = factor(labels[train_idx])
+test_y  = factor(labels[-train_idx])
+
+cat("Registros de entrenamiento:", nrow(train_x), "\n")
+cat("Registros de prueba:", nrow(test_x), "\n")
+
+table(train_y)
+table(test_y)
+```
+
+Las proporciones de `Impacto Alto` vs `Impacto Otro/Bajo` se mantienen parecidas entre ambos conjuntos, así que la partición aleatoria no introdujo un desbalance adicional.
+
+`naive_bayes()` necesita una matriz densa como entrada (no acepta directamente el formato sparse `dgCMatrix`), así que se convierten ambos conjuntos con `as.matrix()`.
+
+```{r}
+train_x_dense = as.matrix(train_x)
+test_x_dense  = as.matrix(test_x)
+```
+
+## Entrenamiento del modelo
+
+Se entrena con `naive_bayes()` del paquete `naivebayes`, usando como predictores la frecuencia de cada palabra en el titular y como variable de respuesta la categoría de impacto.
+
+```{r}
+modelo_nb = naive_bayes(x = train_x_dense, y = train_y, laplace = 1)
+
+modelo_nb
+```
+
+Se usa `laplace = 1` para suavizar las probabilidades: sin esto, una palabra del test que nunca apareció en el training set para alguna clase le asignaría probabilidad cero a esa clase, arruinando la predicción completa del titular.
+
+## Predicciones sobre el test set
+
+```{r}
+pred = predict(modelo_nb, newdata = test_x_dense)
+```
+
+## Matriz de confusión
+
+```{r}
+matriz_confusion = table(Real = test_y, Predicho = pred)
+matriz_confusion
+```
+
+## Métricas de desempeño
+
+Se toma `Impacto Alto` como la clase positiva, ya que es la que más interesa detectar desde el punto de vista de un inversionista.
+
+```{r}
+TP = matriz_confusion["Impacto Alto", "Impacto Alto"]
+FN = matriz_confusion["Impacto Alto", "Impacto Otro/Bajo"]
+FP = matriz_confusion["Impacto Otro/Bajo", "Impacto Alto"]
+TN = matriz_confusion["Impacto Otro/Bajo", "Impacto Otro/Bajo"]
+
+accuracy  = (TP + TN) / sum(matriz_confusion)
+precision = TP / (TP + FP)
+recall    = TP / (TP + FN)
+f1        = 2 * precision * recall / (precision + recall)
+
+tibble(
+    Métrica = c("Accuracy", "Precision", "Recall", "F1-score"),
+    Valor   = round(c(accuracy, precision, recall, f1), 3)
+)
+```
+
+## Interpretación en el contexto financiero
+
+**Lectura general del desempeño**: El modelo obtiene un accuracy de 53.6%, por debajo del 68% que se lograría prediciendo siempre "Impacto Otro/Bajo" (la clase mayoritaria en el test). Esto sugiere que, con el vocabulario y la representación de frecuencias actuales, el modelo no está capturando una señal lo suficientemente fuerte para distinguir impacto alto del resto.
+
+**Falso positivo (86 + 172 = 258 predicciones de "Impacto Alto", cuando solo 86 son correctas [precisión: 33.3%])**: De cada 3 alertas de impacto alto que el modelo genera, 2 son falsas alarmas. Un inversionista que actuara sobre cada alerta estaría tomando decisiones equivocadas la mayoría de las veces: cubrirse, vender o reposicionarse ante noticias que en realidad no iban a mover el mercado, generando comisiones y fricción de manera injustificada casi el doble de las veces que estaría en lo correcto.
+
+**Falso negativo (86 + 95 = 181 noticias de impacto alto real, por lo que el 52.5%, quedaron clasificadas como "Otro/Bajo" [recall: 47.5%])**: Más de la mitad de las noticias que sí eran relevantes pasaron desapercibidas. Esto es particularmente riesgoso porque implica que un inversionista que confiara en el modelo se quedaría sin cobertura frente a movimientos reales del mercado más de la mitad de las veces.
+
+Con este desempeño, ni el precision ni el recall son lo bastante altos como para usar el modelo de forma confiable en ninguno de los dos extremos: genera demasiadas falsas alarmas (le costaría credibilidad y dinero en fricción si se actuara sobre cada alerta) y al mismo tiempo deja pasar más de la mitad de las noticias realmente relevantes (exponiendo al inversionista a riesgo no cubierto).
